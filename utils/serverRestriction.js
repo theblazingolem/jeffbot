@@ -4,6 +4,7 @@
  */
 
 const { MessageFlags, PermissionFlagsBits } = require("discord.js");
+require('dotenv').config();
 const ownerId = process.env.OWNERID;
 // require('../config.json');
 
