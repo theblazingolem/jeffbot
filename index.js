@@ -1,8 +1,7 @@
-require('dotenv').config();
 // Require the necessary discord.js classes
 const fs = require("node:fs");
-const keep_alive = require("./keep_alive.js");
 const path = require("node:path");
+const keep_alive = require("./keep_alive.js");
 const {
     Client,
     Collection,
@@ -61,4 +60,4 @@ for (const file of eventFiles) {
 }
 
 // Log in to Discord with your client's token
-client.login(token);
+client.login(token.toString());
