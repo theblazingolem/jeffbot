@@ -1,4 +1,4 @@
-const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const commandData = require('../../data/command-data.json');
 
 // Guild ID for guild-specific command
@@ -19,7 +19,7 @@ module.exports = {
             if (!commandData || !commandData.content) {
                 return interaction.reply({
                     content: 'Command list configuration not found in command-data.json.',
-                    ephemeral: true
+                    flags: MessageFlags.Ephemeral
                 });
             }
 
@@ -75,14 +75,14 @@ module.exports = {
             await interaction.reply({
                 content: commandData.content,
                 components: components,
-                ephemeral: commandData.ephemeral || false
+                flags: MessageFlags.Ephemeral
             });
 
         } catch (error) {
             console.error('Error in commands command:', error);
             await interaction.reply({
                 content: 'An error occurred while fetching the command list.',
-                ephemeral: true
+                flags: MessageFlags.Ephemeral
             });
         }
     }

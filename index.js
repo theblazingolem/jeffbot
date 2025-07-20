@@ -1,3 +1,4 @@
+require('dotenv').config();
 // Require the necessary discord.js classes
 const fs = require("node:fs");
 const path = require("node:path");
@@ -60,4 +61,4 @@ for (const file of eventFiles) {
 }
 
 // Log in to Discord with your client's token
-client.login(token.toString());
+client.login(token);

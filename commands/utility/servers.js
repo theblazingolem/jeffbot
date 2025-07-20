@@ -9,7 +9,7 @@ module.exports = {
     async execute(interaction) {
         try {
             // Acknowledge the interaction immediately
-            await interaction.deferReply({ ephemeral: true });
+            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
             // Get the client
             const client = interaction.client;
@@ -101,7 +101,7 @@ module.exports = {
                 for (let i = 1; i < chunks.length; i++) {
                     await interaction.followUp({
                         content: chunks[i],
-                        ephemeral: true
+                        flags: MessageFlags.Ephemeral
                     });
                 }
             } else {
@@ -116,9 +116,9 @@ module.exports = {
                 if (interaction.deferred) {
                     await interaction.editReply({ content: `Error: ${error.message}` });
                 } else if (!interaction.replied) {
-                    await interaction.reply({ content: `Error: ${error.message}`, ephemeral: true });
+                    await interaction.reply({ content: `Error: ${error.message}`, flags: MessageFlags.Ephemeral });
                 } else {
-                    await interaction.followUp({ content: `Error: ${error.message}`, ephemeral: true });
+                    await interaction.followUp({ content: `Error: ${error.message}`, flags: MessageFlags.Ephemeral });
                 }
             } catch (followUpError) {
                 console.error('Error sending error message:', followUpError);
