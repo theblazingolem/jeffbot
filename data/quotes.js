@@ -30,5 +30,5 @@ export const quotes = [
     "You want some good parental advice? Don't listen to me.",
     "It's so important to your future that you not finish that sentence.",
     "They say talent skips a generation. So uh, I'm sure your kids will be sharp as tacks.",
-    "Taking dinosaurs off this island is the worst idea in the long, sad history of bad ideas. And I'm gonna be there when you learn tha t"
-]
+    "Taking dinosaurs off this island is the worst idea in the long, sad history of bad ideas. And I'm gonna be there when you learn that",
+];
