@@ -1,88 +1,139 @@
-const { SlashCommandBuilder, MessageFlags } = require('discord.js');
-// const { execute } = require('./ping');
+const { SlashCommandBuilder, MessageFlags } = require("discord.js");
+
+// The channel ID for logging echo command usage
+const LOG_CHANNEL_ID = "1350108952041492561"; // Replace with your actual log channel ID
+
+const OVERRIDE_CODE = "7337#";
+
+const forbiddenWords = [
+    "porn",
+    /\b[gG](?:[oO0]{2,})[nN]\w*\b/, //goon
+    /\bn[i1]g{2,}(?:a|er)?s?\b/i, //n word
+    /f[a@]g{1,2}[o0]ts?/, // f word
+    /r[e3]t[a@]rd/,
+];
+const badWordsRegex = new RegExp(`\\b(${forbiddenWords.join("|")})\\b`, "i");
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('echo')
-        .setDescription('repeats your message')
-        .addStringOption(option =>
-            option.setName('message')
-                .setDescription('The message to send')
-                .setRequired(true)),
-    async execute(interaction) {
-        const message = interaction.options.getString('message');
+        .setName("echo")
+        .setDescription("Repeats your message")
+        .addStringOption((option) =>
+            option
+                .setName("message")
+                .setDescription("The message to send")
+                .setRequired(true)
+        )
+        .addStringOption((option) =>
+            option
+                .setName("override_code")
+                .setDescription("Admin code to bypass certain filters.")
+                .setRequired(false)
+        ),
 
-        // Validate message is not empty
-        if (!message.trim()) {
-            await interaction.reply({
-                content: 'Cannot send an empty message!',
-                flags: MessageFlags.Ephemeral
+    async execute(interaction) {
+        const messageContent = interaction.options.getString("message");
+        const overrideCodeInput =
+            interaction.options.getString("override_code");
+
+        // --- 1. Initial Validation ---
+        if (!messageContent.trim()) {
+            return interaction.reply({
+                content: "Cannot send an empty message!",
+                flags: MessageFlags.Ephemeral,
             });
-            return;
         }
 
-        // Check for mentions
-        const mentionPatterns = [
-            /@everyone/,
-            /@here/,
-            /<@&?\d+>/  // Matches both role mentions (<@&role_id>) and user mentions (<@user_id>)
+        // --- 2. Check for Override Code ---
+        const hasOverride = overrideCodeInput === OVERRIDE_CODE;
+
+        // --- 3. Filtering Logic ---
+        // These mentions are *always* forbidden
+        const alwaysForbiddenPatterns = [
+            { pattern: /@everyone/, name: "@everyone mention" },
+            { pattern: /@here/, name: "@here mention" },
+            { pattern: /<@&\d+>/, name: "role mention" }, // Matches <@&role_id>
         ];
 
-        for (const pattern of mentionPatterns) {
-            if (pattern.test(message)) {
-                await interaction.reply({
-                    content: 'Your message contains @everyone, @here, or role/user mentions. These are not allowed for security reasons.',
-                    flags: MessageFlags.Ephemeral
+        // These are forbidden *unless* the override code is used
+        const conditionalForbiddenPatterns = [
+            { pattern: /<@\d+>/, name: "user mention" }, // Matches <@user_id>
+            { pattern: badWordsRegex, name: "forbidden word" },
+        ];
+
+        for (const { pattern, name } of alwaysForbiddenPatterns) {
+            if (pattern.test(messageContent)) {
+                return interaction.reply({
+                    content: `Your message contains a forbidden ${name}, which is not allowed under any circumstances.`,
+                    flags: MessageFlags.Ephemeral,
                 });
-                return;
             }
         }
 
+        if (!hasOverride) {
+            for (const { pattern, name } of conditionalForbiddenPatterns) {
+                if (pattern.test(messageContent)) {
+                    return interaction.reply({
+                        content: `Your message contains a ${name}, which is not allowed. Admins can bypass some filters with an override code.`,
+                        flags: MessageFlags.Ephemeral,
+                    });
+                }
+            }
+        }
+
+        // --- 4. Send the Message and Log ---
         try {
-            // Split the message into words
-            const words = message.split(' ');
-
-            // Malcolm-style fillers
-            const fillers = ['uh', 'uhh', 'um', 'umm', 'well', 'ah', 'oh'];
-
-            // Create a modified message in Malcolm style
-            let malcolmMessage = '';
-
-            // 30% chance to add filler at the beginning
-            if (Math.random() < 0.3) {
-                malcolmMessage = fillers[Math.floor(Math.random() * fillers.length)] + ', ';
-            }
-
-            // Process each word
-            for (let i = 0; i < words.length; i++) {
-                // Add the word
-                malcolmMessage += words[i];
-
-                // 25% chance to add a filler after a word (but not the last word)
-                if (i < words.length - 1 && Math.random() < 0.25) {
-                    malcolmMessage += ' ' + fillers[Math.floor(Math.random() * fillers.length)];
-                }
-
-                // Add space if not the last word
-                if (i < words.length - 1) {
-                    malcolmMessage += ' ';
-                }
-            }
-
-            // Send the Malcolm-style message
-            await interaction.channel.send(malcolmMessage);
+            // Send the actual message to the channel
+            const sentMessage = await interaction.channel.send(messageContent);
 
             // Send ephemeral confirmation to the user
             await interaction.reply({
-                content: 'Message sent!',
-                flags: MessageFlags.Ephemeral
+                content: "Message sent!",
+                flags: MessageFlags.Ephemeral,
             });
+
+            // Send the log message to the designated channel
+            await sendLogMessage(interaction, messageContent, sentMessage);
         } catch (error) {
-            console.error('Error in echo command:', error);
-            await interaction.reply({
-                content: 'There was an error while sending the message!',
-                flags: MessageFlags.Ephemeral
-            }).catch(console.error);
+            console.error("Error in echo command:", error);
+            await interaction
+                .reply({
+                    content: "There was an error while sending the message!",
+                    flags: MessageFlags.Ephemeral,
+                })
+                .catch(console.error); // In case the initial reply fails
         }
-    }
+    },
 };
+
+/**
+ * Sends a formatted log message to the log channel.
+ * @param {import('discord.js').ChatInputCommandInteraction} interaction The interaction object.
+ * @param {string} content The original content of the message.
+ * @param {import('discord.js').Message} sentMessage The message object returned after sending the echo.
+ */
+async function sendLogMessage(interaction, content, sentMessage) {
+    try {
+        const logChannel = await interaction.guild.channels.fetch(
+            LOG_CHANNEL_ID
+        );
+        if (!logChannel || !logChannel.isTextBased()) {
+            console.error(
+                `Log channel with ID ${LOG_CHANNEL_ID} not found or is not a text channel.`
+            );
+            return;
+        }
+
+        const logMessage = [
+            `**${
+                interaction.user.username
+            }** sent a message in ${interaction.channel.toString()}:`,
+            `>>> ${content}`,
+            `- Jump to message: ${sentMessage.url}`,
+        ].join("\n");
+
+        await logChannel.send(logMessage);
+    } catch (error) {
+        console.error("Failed to send log message:", error);
+    }
+}

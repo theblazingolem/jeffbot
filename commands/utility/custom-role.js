@@ -1,213 +1,250 @@
-const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
-const fs = require('fs');
-const path = require('path');
+const { SlashCommandBuilder, MessageFlags } = require("discord.js");
 
 // Guild ID for guild-specific command
-const GUILD_ID = '841699180271239218';
+const GUILD_ID = "841699180271239218";
 
 // The booster role ID that's required to use this command
-const BOOSTER_ROLE_ID = '855954434935619584';
+const BOOSTER_ROLE_ID = "855954434935619584";
 
-// The reference role ID - custom roles will be positioned under this role
-const REFERENCE_ROLE_ID = '862592252199043082';
+// The boundary role IDs for custom roles
+const MIN_ROLE_ID = "1424000379712045237"; // lower bound
+const MAX_ROLE_ID = "1424000711183826995"; // upper bound
 
-// Path to the custom roles data file
-const CUSTOM_ROLES_PATH = path.join(__dirname, '../../data/custom-roles.json');
-
-// Helper function to load custom roles data
-function loadCustomRoles() {
-    try {
-        if (!fs.existsSync(CUSTOM_ROLES_PATH)) {
-            // Create the file with default structure if it doesn't exist
-            fs.writeFileSync(CUSTOM_ROLES_PATH, JSON.stringify({ roles: {} }, null, 4));
-            return { roles: {} };
-        }
-
-        const data = fs.readFileSync(CUSTOM_ROLES_PATH, 'utf8');
-        return JSON.parse(data);
-    } catch (error) {
-        console.error('Error loading custom roles data:', error);
-        return { roles: {} };
-    }
-}
-
-// Helper function to save custom roles data
-function saveCustomRoles(data) {
-    try {
-        fs.writeFileSync(CUSTOM_ROLES_PATH, JSON.stringify(data, null, 4));
-        return true;
-    } catch (error) {
-        console.error('Error saving custom roles data:', error);
-        return false;
-    }
-}
+// The channel ID for logging role changes
+const LOG_CHANNEL_ID = "1350108952041492561";
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('custom-role')
-        .setDescription('Create a custom role with your chosen name and color')
-        .addStringOption(option =>
-            option.setName('name')
-                .setDescription('The name for your custom role')
-                .setRequired(true))
-        .addStringOption(option =>
-            option.setName('color')
-                .setDescription('The color for your role in hex format (e.g., #FF5733)')
-                .setRequired(true)),
+        .setName("custom-role")
+        .setDescription(
+            "Booster commands to create or edit a personal custom role."
+        )
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName("create")
+                .setDescription("Create a new custom role (boosters only).")
+                .addStringOption((option) =>
+                    option
+                        .setName("name")
+                        .setDescription("The name for your new custom role.")
+                        .setRequired(true)
+                )
+                .addStringOption((option) =>
+                    option
+                        .setName("color")
+                        .setDescription(
+                            "A hex color for your role (e.g., #FF5733). Optional."
+                        )
+                        .setRequired(false)
+                )
+        )
+        .addSubcommand((subcommand) =>
+            subcommand
+                .setName("edit")
+                .setDescription(
+                    "Edit your existing custom role (boosters only)."
+                )
+                .addStringOption((option) =>
+                    option
+                        .setName("name")
+                        .setDescription("The new name for your custom role.")
+                        .setRequired(false)
+                )
+                .addStringOption((option) =>
+                    option
+                        .setName("color")
+                        .setDescription(
+                            "The new hex color for your role (e.g., #FF5733)."
+                        )
+                        .setRequired(false)
+                )
+        ),
 
-    // Guild-specific command
     guildCommand: true,
     guildId: GUILD_ID,
 
     async execute(interaction) {
-        try {
-            // Check if the user has the booster role
-            const member = interaction.member;
-            if (!member.roles.cache.has(BOOSTER_ROLE_ID)) {
-                await interaction.reply({
-                    content: 'Please boost the server to unlock this command.',
-                    flags: MessageFlags.Ephemeral
-                });
-                return;
-            }
-
-            // Get the role name and color from the options
-            const roleName = interaction.options.getString('name');
-            let roleColor = interaction.options.getString('color');
-
-            // Validate and format the color
-            if (!roleColor.startsWith('#')) {
-                roleColor = `#${roleColor}`;
-            }
-
-            // Check if the color is a valid hex color
-            const hexColorRegex = /^#([0-9A-F]{3}){1,2}$/i;
-            if (!hexColorRegex.test(roleColor)) {
-                await interaction.reply({
-                    content: 'Please provide a valid hex color code (e.g., #FF5733).',
-                    flags: MessageFlags.Ephemeral
-                });
-                return;
-            }
-
-            // Defer the reply since creating/editing a role might take a moment
-            await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-            // Get the reference role to position our custom role under it
-            const referenceRole = await interaction.guild.roles.fetch(REFERENCE_ROLE_ID);
-            if (!referenceRole) {
-                await interaction.followUp({
-                    content: 'Could not find the reference role for positioning. The role will be created but may not be positioned correctly.',
-                    flags: MessageFlags.Ephemeral
-                });
-            }
-
-            // Load custom roles data
-            const customRolesData = loadCustomRoles();
-            const userId = interaction.user.id;
-            const guildId = interaction.guild.id;
-
-            // Initialize guild data if it doesn't exist
-            if (!customRolesData.roles[guildId]) {
-                customRolesData.roles[guildId] = {};
-            }
-
-            let roleToUse;
-            let isNewRole = true;
-
-            // Check if the user already has a custom role in our data
-            if (customRolesData.roles[guildId][userId]) {
-                const existingRoleId = customRolesData.roles[guildId][userId];
-                try {
-                    // Try to fetch the existing role
-                    roleToUse = await interaction.guild.roles.fetch(existingRoleId);
-
-                    if (roleToUse) {
-                        isNewRole = false;
-
-                        // Edit the existing role
-                        await roleToUse.edit({
-                            name: roleName,
-                            color: roleColor,
-                            reason: `Custom role updated for ${interaction.user.tag}`
-                        });
-
-                        // Ensure the user still has the role
-                        if (!member.roles.cache.has(roleToUse.id)) {
-                            await member.roles.add(roleToUse.id);
-                        }
-
-                        // Set the position if reference role exists
-                        if (referenceRole) {
-                            try {
-                                // Position just below the reference role
-                                await roleToUse.setPosition(referenceRole.position - 1);
-                            } catch (posError) {
-                                console.error('Error setting role position:', posError);
-                                // Continue even if positioning fails
-                            }
-                        }
-                    } else {
-                        // Role not found, will create a new one
-                        isNewRole = true;
-                    }
-                } catch (fetchError) {
-                    console.error('Error fetching existing role:', fetchError);
-                    // Role not found or error, will create a new one
-                    isNewRole = true;
-                }
-            }
-
-            // Create a new role if needed
-            if (isNewRole) {
-                roleToUse = await interaction.guild.roles.create({
-                    name: roleName,
-                    color: roleColor,
-                    permissions: [],
-                    reason: `Custom role created for ${interaction.user.tag}`,
-                    position: referenceRole ? referenceRole.position - 1 : 0
-                });
-
-                // If the position wasn't set properly during creation, try again
-                if (referenceRole && roleToUse.position !== referenceRole.position - 1) {
-                    try {
-                        await roleToUse.setPosition(referenceRole.position - 1);
-                    } catch (posError) {
-                        console.error('Error setting role position:', posError);
-                        // Continue even if positioning fails
-                    }
-                }
-
-                // Assign the role to the user
-                await member.roles.add(roleToUse.id);
-
-                // Store the role ID in our data
-                customRolesData.roles[guildId][userId] = roleToUse.id;
-                saveCustomRoles(customRolesData);
-            }
-
-            // Send success message
-            const actionText = isNewRole ? "created and assigned to you" : "updated";
-            await interaction.followUp({
-                content: `✅ Your custom role "${roleName}" with color ${roleColor} has been ${actionText}!`,
-                flags: MessageFlags.Ephemeral
+        // 1. Initial Checks (Booster status & Defer)
+        if (!interaction.member.roles.cache.has(BOOSTER_ROLE_ID)) {
+            return interaction.reply({
+                content:
+                    "This command is a special perk for server boosters. Please boost the server to use it!",
+                flags: MessageFlags.Ephemeral,
             });
-
-        } catch (error) {
-            console.error('Error in custom-role command:', error);
-
-            // Reply with error message if the interaction hasn't been replied to
-            if (interaction.deferred) {
-                await interaction.followUp({
-                    content: `An error occurred while managing your custom role: ${error.message}`,
-                    flags: MessageFlags.Ephemeral
-                });
-            } else {
-                await interaction.reply({
-                    content: `An error occurred while managing your custom role: ${error.message}`,
-                    flags: MessageFlags.Ephemeral
-                });
-            }
         }
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+        try {
+            const subcommand = interaction.options.getSubcommand();
+            const member = interaction.member;
+
+            // 2. Find role boundaries and user's existing custom role (common logic)
+            const { existingUserRole } = await findUserCustomRole(interaction);
+
+            // 3. Route to the correct subcommand logic
+            if (subcommand === "create") {
+                await handleCreate(interaction, member, existingUserRole);
+            } else if (subcommand === "edit") {
+                await handleEdit(interaction, member, existingUserRole);
+            }
+        } catch (error) {
+            console.error("Error in custom-role command:", error);
+            const errorMessage = `An error occurred: ${error.message}. If this persists, please contact an admin.`;
+            await interaction.followUp({
+                content: errorMessage,
+                flags: MessageFlags.Ephemeral,
+            });
+        }
+    },
+};
+
+/**
+ * Handles the logic for the `/custom-role create` subcommand.
+ */
+async function handleCreate(interaction, member, existingUserRole) {
+    if (existingUserRole) {
+        return interaction.followUp({
+            content: `You already have a custom role (<@&${existingUserRole.id}>). Use \`/custom-role edit\` to modify it.`,
+            flags: MessageFlags.Ephemeral,
+        });
     }
-}; 
+
+    const roleName = interaction.options.getString("name");
+    const roleColor = validateColor(interaction.options.getString("color"));
+
+    if (roleColor === false) {
+        return interaction.followUp({
+            content:
+                "The color you provided is not a valid hex code. Please use a format like `#FF5733` or `FF5733`.",
+            flags: MessageFlags.Ephemeral,
+        });
+    }
+
+    const maxRole = await interaction.guild.roles.fetch(MAX_ROLE_ID);
+    if (!maxRole) throw new Error("Upper boundary role not found.");
+
+    const newRole = await interaction.guild.roles.create({
+        name: roleName,
+        color: roleColor,
+        permissions: [],
+        position: maxRole.position - 1,
+        reason: `Custom role created for booster ${interaction.user.tag}`,
+    });
+
+    await member.roles.add(newRole.id);
+
+    await interaction.followUp({
+        content: `✅ Your new custom role <@&${newRole.id}> has been created and assigned to you!`,
+        flags: MessageFlags.Ephemeral,
+    });
+
+    // Send log message
+    await sendLogMessage(interaction, "created", newRole, member);
+}
+
+/**
+ * Handles the logic for the `/custom-role edit` subcommand.
+ */
+async function handleEdit(interaction, member, existingUserRole) {
+    if (!existingUserRole) {
+        return interaction.followUp({
+            content:
+                "You do not have a custom role to edit. Use `/custom-role create` to make one first.",
+            flags: MessageFlags.Ephemeral,
+        });
+    }
+
+    const roleName = interaction.options.getString("name");
+    const roleColor = validateColor(interaction.options.getString("color"));
+
+    if (roleColor === false) {
+        return interaction.followUp({
+            content:
+                "The color you provided is not a valid hex code. Please use a format like `#FF5733` or `FF5733`.",
+            flags: MessageFlags.Ephemeral,
+        });
+    }
+
+    if (!roleName && !roleColor) {
+        return interaction.followUp({
+            content:
+                "You must provide a new name, a new color, or both to edit your role.",
+            flags: MessageFlags.Ephemeral,
+        });
+    }
+
+    const updatedRole = await existingUserRole.edit({
+        name: roleName || existingUserRole.name,
+        color: roleColor || existingUserRole.color,
+        reason: `Custom role updated for booster ${interaction.user.tag}`,
+    });
+
+    await interaction.followUp({
+        content: `✅ Your custom role <@&${updatedRole.id}> has been successfully updated!`,
+        flags: MessageFlags.Ephemeral,
+    });
+
+    // Send log message
+    await sendLogMessage(interaction, "edited", updatedRole, member);
+}
+
+/**
+ * Finds the boundaries for custom roles and checks if the user already has one.
+ */
+async function findUserCustomRole(interaction) {
+    const minRole = await interaction.guild.roles.fetch(MIN_ROLE_ID);
+    const maxRole = await interaction.guild.roles.fetch(MAX_ROLE_ID);
+
+    if (!minRole || !maxRole) {
+        throw new Error("Custom role boundaries are not configured correctly.");
+    }
+
+    const lowerBoundPos = Math.min(minRole.position, maxRole.position);
+    const upperBoundPos = Math.max(minRole.position, maxRole.position);
+
+    const customRolesInCategory = interaction.guild.roles.cache.filter(
+        (role) => role.position > lowerBoundPos && role.position < upperBoundPos
+    );
+
+    const existingUserRole =
+        interaction.member.roles.cache.find((role) =>
+            customRolesInCategory.has(role.id)
+        ) || null;
+
+    return { existingUserRole };
+}
+
+/**
+ * Validates and formats a hex color string.
+ */
+function validateColor(color) {
+    if (!color) return null;
+    if (!color.startsWith("#")) {
+        color = `#${color}`;
+    }
+    const hexColorRegex = /^#([0-9A-F]{3}){1,2}$/i;
+    return hexColorRegex.test(color) ? color : false;
+}
+
+/**
+ * Sends a formatted log message to the designated log channel.
+ */
+async function sendLogMessage(interaction, action, role, member) {
+    try {
+        const logChannel = await interaction.guild.channels.fetch(
+            LOG_CHANNEL_ID
+        );
+        if (!logChannel || !logChannel.isTextBased()) {
+            console.error(
+                `Log channel with ID ${LOG_CHANNEL_ID} not found or is not a text channel.`
+            );
+            return;
+        }
+
+        const logMessage = `Booster ${member.toString()} has ${action} custom role ${role.toString()}`;
+
+        await logChannel.send(logMessage);
+    } catch (error) {
+        console.error("Failed to send log message:", error);
+    }
+}
