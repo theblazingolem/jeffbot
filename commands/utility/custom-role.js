@@ -4,7 +4,7 @@ const { SlashCommandBuilder, MessageFlags } = require("discord.js");
 const GUILD_ID = "841699180271239218";
 
 // The booster role ID that's required to use this command
-const BOOSTER_ROLE_ID = "1323863019935240242";
+const BOOSTER_ROLE_ID = "855954434935619584";
 
 // The two roles that define the boundaries of the custom role category.
 // The command will work correctly regardless of which ID is higher or lower.
