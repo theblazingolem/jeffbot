@@ -24,7 +24,7 @@ const forbiddenPatterns = [
 module.exports = {
     data: new SlashCommandBuilder()
         .setName("revive")
-        .setDescription("pings the chat role with a topic to discuss")
+        .setDescription("Pings the chat role with a topic to discuss")
         .addStringOption((option) =>
             option
                 .setName("topic")

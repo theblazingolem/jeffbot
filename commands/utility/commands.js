@@ -1,13 +1,19 @@
-const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
-const commandData = require('../../data/command-data.json');
+const {
+    SlashCommandBuilder,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    MessageFlags,
+} = require("discord.js");
+const commandData = require("../../data/command-data.json");
 
 // Guild ID for guild-specific command
-const GUILD_ID = '841699180271239218';
+const GUILD_ID = "841699180271239218";
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('commands')
-        .setDescription('shows a list of available bot commands'),
+        .setName("commands")
+        .setDescription("Shows a list of available bot commands"),
 
     // Guild-specific command
     guildCommand: true,
@@ -18,8 +24,9 @@ module.exports = {
             // Check if the command-data.json file has the expected content
             if (!commandData || !commandData.content) {
                 return interaction.reply({
-                    content: 'Command list configuration not found in command-data.json.',
-                    flags: MessageFlags.Ephemeral
+                    content:
+                        "Command list configuration not found in command-data.json.",
+                    flags: MessageFlags.Ephemeral,
                 });
             }
 
@@ -28,24 +35,25 @@ module.exports = {
 
             if (commandData.components && commandData.components.length > 0) {
                 for (const comp of commandData.components) {
-                    if (comp['action-row']) {
+                    if (comp["action-row"]) {
                         const actionRow = new ActionRowBuilder();
 
                         // Handle different component types
-                        if (comp.type === 'button') {
+                        if (comp.type === "button") {
                             const button = new ButtonBuilder()
                                 .setCustomId(comp.custom_id)
                                 .setLabel(comp.label);
 
                             // Set the style (default to PRIMARY if not specified)
-                            const style = comp.style || 'primary';
-                            const buttonStyle = {
-                                'primary': ButtonStyle.Primary,
-                                'secondary': ButtonStyle.Secondary,
-                                'success': ButtonStyle.Success,
-                                'danger': ButtonStyle.Danger,
-                                'link': ButtonStyle.Link
-                            }[style.toLowerCase()] || ButtonStyle.Primary;
+                            const style = comp.style || "primary";
+                            const buttonStyle =
+                                {
+                                    primary: ButtonStyle.Primary,
+                                    secondary: ButtonStyle.Secondary,
+                                    success: ButtonStyle.Success,
+                                    danger: ButtonStyle.Danger,
+                                    link: ButtonStyle.Link,
+                                }[style.toLowerCase()] || ButtonStyle.Primary;
 
                             button.setStyle(buttonStyle);
 
@@ -54,7 +62,7 @@ module.exports = {
                                 button.setEmoji({
                                     id: String(comp.emoji_id),
                                     name: comp.emoji_name,
-                                    animated: comp.emoji_animated
+                                    animated: comp.emoji_animated,
                                 });
                             }
 
@@ -75,15 +83,14 @@ module.exports = {
             await interaction.reply({
                 content: commandData.content,
                 components: components,
-                flags: MessageFlags.Ephemeral
+                flags: MessageFlags.Ephemeral,
             });
-
         } catch (error) {
-            console.error('Error in commands command:', error);
+            console.error("Error in commands command:", error);
             await interaction.reply({
-                content: 'An error occurred while fetching the command list.',
-                flags: MessageFlags.Ephemeral
+                content: "An error occurred while fetching the command list.",
+                flags: MessageFlags.Ephemeral,
             });
         }
-    }
-}; 
+    },
+};
