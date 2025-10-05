@@ -23,7 +23,7 @@ module.exports = {
         .addSubcommand((subcommand) =>
             subcommand
                 .setName("create")
-                .setDescription("Create a new custom role (boosters only).")
+                .setDescription("Create a new custom role")
                 .addStringOption((option) =>
                     option
                         .setName("name")
@@ -42,9 +42,7 @@ module.exports = {
         .addSubcommand((subcommand) =>
             subcommand
                 .setName("edit")
-                .setDescription(
-                    "Edit your existing custom role (boosters only)."
-                )
+                .setDescription("Edit your existing custom role")
                 .addStringOption((option) =>
                     option
                         .setName("name")
