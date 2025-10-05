@@ -1,28 +1,39 @@
-const { SlashCommandBuilder, MessageFlags, PermissionFlagsBits } = require('discord.js');
-const fs = require('node:fs');
-const path = require('node:path');
+const {
+    SlashCommandBuilder,
+    MessageFlags,
+    PermissionFlagsBits,
+} = require("discord.js");
+const fs = require("node:fs");
+const path = require("node:path");
 
 module.exports = {
-    category: 'utility',
+    category: "utility",
     data: new SlashCommandBuilder()
-        .setName('reload')
-        .setDescription('reloads a command.')
-        .addStringOption(option =>
-            option.setName('command')
-                .setDescription('The command to reload.')
-                .setRequired(true))
+        .setName("reload")
+        .setDescription("reloads a command.")
+        .addStringOption((option) =>
+            option
+                .setName("command")
+                .setDescription("The command to reload.")
+                .setRequired(true)
+        )
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator), // Restrict to administrators only
     async execute(interaction) {
-        const commandName = interaction.options.getString('command', true).toLowerCase();
+        const commandName = interaction.options
+            .getString("command", true)
+            .toLowerCase();
         const command = interaction.client.commands.get(commandName);
 
         if (!command) {
-            return interaction.reply({ content: `There is no command with the name \`/${commandName}\`!`, flags: MessageFlags.Ephemeral });
+            return interaction.reply({
+                content: `There is no command with the name \`/${commandName}\`!`,
+                flags: MessageFlags.Ephemeral,
+            });
         }
 
         try {
             // Find the command file in the commands directory structure
-            const foldersPath = path.join(__dirname, '..'); // Go up one level to commands folder
+            const foldersPath = path.join(__dirname, ".."); // Go up one level to commands folder
             const commandFolders = fs.readdirSync(foldersPath);
 
             let commandPath = null;
@@ -30,7 +41,9 @@ module.exports = {
                 const folderPath = path.join(foldersPath, folder);
                 // Make sure it's a directory, not a file
                 if (fs.statSync(folderPath).isDirectory()) {
-                    const commandFiles = fs.readdirSync(folderPath).filter(file => file.endsWith('.js'));
+                    const commandFiles = fs
+                        .readdirSync(folderPath)
+                        .filter((file) => file.endsWith(".js"));
                     for (const file of commandFiles) {
                         const filePath = path.join(folderPath, file);
                         // Check if this is the command we're looking for
@@ -45,7 +58,7 @@ module.exports = {
             if (!commandPath) {
                 return interaction.reply({
                     content: `Could not find the file for command \`/${commandName}\`!`,
-                    flags: MessageFlags.Ephemeral
+                    flags: MessageFlags.Ephemeral,
                 });
             }
 
@@ -56,12 +69,15 @@ module.exports = {
             const newCommand = require(commandPath);
             interaction.client.commands.set(newCommand.data.name, newCommand);
 
-            await interaction.reply({ content: `Command \`/${newCommand.data.name}\` was successfully reloaded! 🔄`, flags: MessageFlags.Ephemeral });
+            await interaction.reply({
+                content: `Command \`/${newCommand.data.name}\` was successfully reloaded! 🔄`,
+                flags: MessageFlags.Ephemeral,
+            });
         } catch (error) {
             console.error(error);
             await interaction.reply({
                 content: `Error reloading \`/${commandName}\`\n\`${error.message}\``,
-                flags: MessageFlags.Ephemeral
+                flags: MessageFlags.Ephemeral,
             });
         }
     },

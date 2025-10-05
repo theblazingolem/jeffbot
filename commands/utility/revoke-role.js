@@ -4,7 +4,6 @@ const {
     MessageFlags,
 } = require("discord.js");
 
-// Guild ID for guild-specific command
 const GUILD_ID = "841699180271239218";
 
 const CUSTOM_ROLES_CONFIG = {

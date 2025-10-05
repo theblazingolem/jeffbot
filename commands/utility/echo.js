@@ -1,22 +1,22 @@
 const { SlashCommandBuilder, MessageFlags } = require("discord.js");
 
-const LOG_CHANNEL_ID = "845885831708540940";
+const LOG_CHANNEL_ID = "1424304322812051596";
 
 const OVERRIDE_CODE = "7337#";
 
-const forbiddenWords = [
+const forbiddenPatterns = [
     "porn",
-    /\b[gG](?:[oO0]{2,})[nN]\w*\b/, //goon
-    /\bn[i1]g{2,}(?:a|er)?s?\b/i, //n word
-    /f[a@]g{1,2}[o0]ts?/, // f word
-    /r[e3]t[a@]rd/,
+    "hitler",
+    /\b[gG](?:[oO0]{2,})[nN]\w*\b/i, // goon
+    /\bn[i1]g{2,}(?:a|er)?s?\b/i, // n word
+    /f[a@]g{1,2}[o0]ts?/i, // f word
+    /r[e3]t[a@]rd/i,
 ];
-const badWordsRegex = new RegExp(`\\b(${forbiddenWords.join("|")})\\b`, "i");
 
 module.exports = {
     data: new SlashCommandBuilder()
         .setName("echo")
-        .setDescription("Repeats your message")
+        .setDescription("Repeats your message with filtering and logging.")
         .addStringOption((option) =>
             option
                 .setName("message")
@@ -35,7 +35,6 @@ module.exports = {
         const overrideCodeInput =
             interaction.options.getString("override_code");
 
-        // --- 1. Initial Validation ---
         if (!messageContent.trim()) {
             return interaction.reply({
                 content: "Cannot send an empty message!",
@@ -43,21 +42,13 @@ module.exports = {
             });
         }
 
-        // --- 2. Check for Override Code ---
         const hasOverride = overrideCodeInput === OVERRIDE_CODE;
 
-        // --- 3. Filtering Logic ---
-        // These mentions are *always* forbidden
+        // --- Filtering Logic ---
         const alwaysForbiddenPatterns = [
             { pattern: /@everyone/, name: "@everyone mention" },
             { pattern: /@here/, name: "@here mention" },
-            { pattern: /<@&\d+>/, name: "role mention" }, // Matches <@&role_id>
-        ];
-
-        // These are forbidden *unless* the override code is used
-        const conditionalForbiddenPatterns = [
-            { pattern: /<@\d+>/, name: "user mention" }, // Matches <@user_id>
-            { pattern: badWordsRegex, name: "forbidden word" },
+            { pattern: /<@&\d+>/, name: "role mention" },
         ];
 
         for (const { pattern, name } of alwaysForbiddenPatterns) {
@@ -70,28 +61,29 @@ module.exports = {
         }
 
         if (!hasOverride) {
-            for (const { pattern, name } of conditionalForbiddenPatterns) {
-                if (pattern.test(messageContent)) {
-                    return interaction.reply({
-                        content: `Your message contains a ${name}, which is not allowed. Admins can bypass some filters with an override code.`,
-                        flags: MessageFlags.Ephemeral,
-                    });
-                }
+            // Check for user mentions
+            if (/<@\d+>/.test(messageContent)) {
+                return interaction.reply({
+                    content: `Your message contains a user mention, which is not allowed.`,
+                    flags: MessageFlags.Ephemeral,
+                });
+            }
+            // Check for forbidden words/patterns
+            if (hasForbiddenContent(messageContent, forbiddenPatterns)) {
+                return interaction.reply({
+                    content: `Your message contains a forbidden word or pattern, which is not allowed.`,
+                    flags: MessageFlags.Ephemeral,
+                });
             }
         }
 
-        // --- 4. Send the Message and Log ---
+        // --- Send the Message and Log ---
         try {
-            // Send the actual message to the channel
             const sentMessage = await interaction.channel.send(messageContent);
-
-            // Send ephemeral confirmation to the user
             await interaction.reply({
                 content: "Message sent!",
                 flags: MessageFlags.Ephemeral,
             });
-
-            // Send the log message to the designated channel
             await sendLogMessage(interaction, messageContent, sentMessage);
         } catch (error) {
             console.error("Error in echo command:", error);
@@ -100,16 +92,38 @@ module.exports = {
                     content: "There was an error while sending the message!",
                     flags: MessageFlags.Ephemeral,
                 })
-                .catch(console.error); // In case the initial reply fails
+                .catch(console.error);
         }
     },
 };
 
 /**
+ * Checks a message against a list of forbidden strings and RegEx patterns.
+ * @param {string} message The message content to check.
+ * @param {Array<string|RegExp>} patterns The list of patterns.
+ * @returns {boolean} True if forbidden content is found, false otherwise.
+ */
+function hasForbiddenContent(message, patterns) {
+    for (const item of patterns) {
+        const regex =
+            item instanceof RegExp
+                ? // If it's already a RegExp, use it
+                  item
+                : // If it's a string, convert it to a whole-word, case-insensitive RegExp
+                  new RegExp(
+                      `\\b${item.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
+                      "i"
+                  );
+
+        if (regex.test(message)) {
+            return true; // Found a match
+        }
+    }
+    return false; // No matches found
+}
+
+/**
  * Sends a formatted log message to the log channel.
- * @param {import('discord.js').ChatInputCommandInteraction} interaction The interaction object.
- * @param {string} content The original content of the message.
- * @param {import('discord.js').Message} sentMessage The message object returned after sending the echo.
  */
 async function sendLogMessage(interaction, content, sentMessage) {
     try {
@@ -117,9 +131,7 @@ async function sendLogMessage(interaction, content, sentMessage) {
             LOG_CHANNEL_ID
         );
         if (!logChannel || !logChannel.isTextBased()) {
-            console.error(
-                `Log channel with ID ${LOG_CHANNEL_ID} not found or is not a text channel.`
-            );
+            console.error(`Log channel with ID ${LOG_CHANNEL_ID} not found.`);
             return;
         }
 

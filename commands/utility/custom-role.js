@@ -1,12 +1,17 @@
 const { SlashCommandBuilder, MessageFlags } = require("discord.js");
 
+// Guild ID for guild-specific command
 const GUILD_ID = "841699180271239218";
 
-const BOOSTER_ROLE_ID = "855954434935619584";
+// The booster role ID that's required to use this command
+const BOOSTER_ROLE_ID = "1323863019935240242";
 
-const MIN_ROLE_ID = "1424000379712045237"; // lower bound
-const MAX_ROLE_ID = "1424000711183826995"; // upper bound
+// The two roles that define the boundaries of the custom role category.
+// The command will work correctly regardless of which ID is higher or lower.
+const BOUNDARY_ONE_ID = "1424000379712045237";
+const BOUNDARY_TWO_ID = "1424000711183826995";
 
+// The channel ID for logging role changes
 const LOG_CHANNEL_ID = "1350108952041492561";
 
 module.exports = {
@@ -60,7 +65,6 @@ module.exports = {
     guildId: GUILD_ID,
 
     async execute(interaction) {
-        // 1. Initial Checks (Booster status & Defer)
         if (!interaction.member.roles.cache.has(BOOSTER_ROLE_ID)) {
             return interaction.reply({
                 content:
@@ -74,12 +78,17 @@ module.exports = {
             const subcommand = interaction.options.getSubcommand();
             const member = interaction.member;
 
-            // 2. Find role boundaries and user's existing custom role (common logic)
-            const { existingUserRole } = await findUserCustomRole(interaction);
+            // Find role boundaries and user's existing custom role (common logic)
+            const { existingUserRole, upperPosition } =
+                await findUserCustomRole(interaction);
 
-            // 3. Route to the correct subcommand logic
             if (subcommand === "create") {
-                await handleCreate(interaction, member, existingUserRole);
+                await handleCreate(
+                    interaction,
+                    member,
+                    existingUserRole,
+                    upperPosition
+                );
             } else if (subcommand === "edit") {
                 await handleEdit(interaction, member, existingUserRole);
             }
@@ -94,7 +103,15 @@ module.exports = {
     },
 };
 
-async function handleCreate(interaction, member, existingUserRole) {
+/**
+ * Handles the logic for the `/custom-role create` subcommand.
+ */
+async function handleCreate(
+    interaction,
+    member,
+    existingUserRole,
+    upperPosition
+) {
     if (existingUserRole) {
         return interaction.followUp({
             content: `You already have a custom role (<@&${existingUserRole.id}>). Use \`/custom-role edit\` to modify it.`,
@@ -113,14 +130,12 @@ async function handleCreate(interaction, member, existingUserRole) {
         });
     }
 
-    const maxRole = await interaction.guild.roles.fetch(MAX_ROLE_ID);
-    if (!maxRole) throw new Error("Upper boundary role not found.");
-
     const newRole = await interaction.guild.roles.create({
         name: roleName,
         color: roleColor,
         permissions: [],
-        position: maxRole.position - 1,
+        // Correctly position the new role just below the upper boundary role
+        position: upperPosition - 1,
         reason: `Custom role created for booster ${interaction.user.tag}`,
     });
 
@@ -131,7 +146,6 @@ async function handleCreate(interaction, member, existingUserRole) {
         flags: MessageFlags.Ephemeral,
     });
 
-    // Send log message
     await sendLogMessage(interaction, "created", newRole, member);
 }
 
@@ -177,7 +191,6 @@ async function handleEdit(interaction, member, existingUserRole) {
         flags: MessageFlags.Ephemeral,
     });
 
-    // Send log message
     await sendLogMessage(interaction, "edited", updatedRole, member);
 }
 
@@ -185,18 +198,28 @@ async function handleEdit(interaction, member, existingUserRole) {
  * Finds the boundaries for custom roles and checks if the user already has one.
  */
 async function findUserCustomRole(interaction) {
-    const minRole = await interaction.guild.roles.fetch(MIN_ROLE_ID);
-    const maxRole = await interaction.guild.roles.fetch(MAX_ROLE_ID);
+    const boundaryOneRole = await interaction.guild.roles.fetch(
+        BOUNDARY_ONE_ID
+    );
+    const boundaryTwoRole = await interaction.guild.roles.fetch(
+        BOUNDARY_TWO_ID
+    );
 
-    if (!minRole || !maxRole) {
+    if (!boundaryOneRole || !boundaryTwoRole) {
         throw new Error("Custom role boundaries are not configured correctly.");
     }
 
-    const lowerBoundPos = Math.min(minRole.position, maxRole.position);
-    const upperBoundPos = Math.max(minRole.position, maxRole.position);
+    const lowerPosition = Math.min(
+        boundaryOneRole.position,
+        boundaryTwoRole.position
+    );
+    const upperPosition = Math.max(
+        boundaryOneRole.position,
+        boundaryTwoRole.position
+    );
 
     const customRolesInCategory = interaction.guild.roles.cache.filter(
-        (role) => role.position > lowerBoundPos && role.position < upperBoundPos
+        (role) => role.position > lowerPosition && role.position < upperPosition
     );
 
     const existingUserRole =
@@ -204,7 +227,7 @@ async function findUserCustomRole(interaction) {
             customRolesInCategory.has(role.id)
         ) || null;
 
-    return { existingUserRole };
+    return { existingUserRole, upperPosition };
 }
 
 /**

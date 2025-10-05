@@ -1,69 +1,127 @@
-const { SlashCommandBuilder, PermissionFlagsBits, MessageFlags } = require('discord.js');
+const {
+    SlashCommandBuilder,
+    PermissionFlagsBits,
+    MessageFlags,
+    ActionRowBuilder,
+    ButtonBuilder,
+    ButtonStyle,
+    ComponentType,
+} = require("discord.js");
 
-// Guild ID for guild-specific command
-const GUILD_ID = '841699180271239218';
-// The role to toggle
-const TARGET_ROLE_ID = '1396464270077591583';
-// Channels to exclude from global mute
+// --- CONFIGURATION ---
+const GUILD_ID = "841699180271239218";
+const LOG_CHANNEL_ID = "1350108952041492561";
+const MOD_ROLE_ID = "857990235194261514";
+
+// Role IDs
+const WATCHLIST_ROLE_ID = "1396464270077591583";
+const BANNED_FROM_GENERAL_ROLE_ID = "1421914360254562544";
+
+// Mute Configuration
 const EXCLUDED_CHANNELS = [
-    '842747868960129025',
-    '1036666039452311592',
-    '915890444922155008'
+    "842747868960129025",
+    "1036666039452311592",
+    "915890444922155008",
 ];
-// Category IDs to target for global mute
-const TARGET_CATEGORIES = [
-    '1260957720731979857',
-    '842746033213669388'
-];
-// Duration options in ms
+const TARGET_CATEGORIES = ["1260957720731979857", "842746033213669388"];
 const DURATION_OPTIONS = {
-    '15m': 15 * 60 * 1000,
-    '30m': 30 * 60 * 1000,
-    '1h': 60 * 60 * 1000
+    "15m": 15 * 60 * 1000,
+    "30m": 30 * 60 * 1000,
+    "1h": 60 * 60 * 1000,
 };
-// In-memory map to track timeouts: { channelId: timeoutObject }
 const muteTimeouts = new Map();
 
 module.exports = {
     data: new SlashCommandBuilder()
-        .setName('watchlist')
-        .setDescription('Manage the watchlist role and mute in this channel')
+        .setName("watchlist")
+        .setDescription("Moderation tools for watchlist and channel access.")
         .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
-        .addSubcommand(sub =>
-            sub.setName('mute')
-                .setDescription('Mute or unmute the watchlist role in this channel or globally')
-                .addStringOption(opt =>
-                    opt.setName('duration')
-                        .setDescription('How long to mute the role for')
+        .addSubcommand((sub) =>
+            sub
+                .setName("mute")
+                .setDescription(
+                    "Mute the watchlist role in this channel or globally."
+                )
+                .addStringOption((opt) =>
+                    opt
+                        .setName("duration")
+                        .setDescription("How long to mute the role for.")
                         .setRequired(true)
                         .addChoices(
-                            { name: '15 minutes', value: '15m' },
-                            { name: '30 minutes', value: '30m' },
-                            { name: '1 hour', value: '1h' }
+                            { name: "15 minutes", value: "15m" },
+                            { name: "30 minutes", value: "30m" },
+                            { name: "1 hour", value: "1h" }
                         )
                 )
-                .addBooleanOption(opt =>
-                    opt.setName('global')
-                        .setDescription('Mute in all channels except excluded ones')
-                        .setRequired(false)
+                .addBooleanOption((opt) =>
+                    opt
+                        .setName("global")
+                        .setDescription("Mute in all applicable channels.")
+                )
+                .addStringOption((opt) =>
+                    opt.setName("reason").setDescription("Reason for the mute.")
                 )
         )
-        .addSubcommand(sub =>
-            sub.setName('add')
-                .setDescription('Add the watchlist role to a user')
-                .addUserOption(opt =>
-                    opt.setName('user')
-                        .setDescription('User to add to the watchlist')
+        .addSubcommand((sub) =>
+            sub
+                .setName("add")
+                .setDescription("Add the watchlist role to a user.")
+                .addUserOption((opt) =>
+                    opt
+                        .setName("user")
+                        .setDescription("User to add to the watchlist.")
                         .setRequired(true)
                 )
+                .addStringOption((opt) =>
+                    opt
+                        .setName("reason")
+                        .setDescription("Reason for adding the user.")
+                )
         )
-        .addSubcommand(sub =>
-            sub.setName('remove')
-                .setDescription('Remove the watchlist role from a user')
-                .addUserOption(opt =>
-                    opt.setName('user')
-                        .setDescription('User to remove from the watchlist')
+        .addSubcommand((sub) =>
+            sub
+                .setName("remove")
+                .setDescription("Remove the watchlist role from a user.")
+                .addUserOption((opt) =>
+                    opt
+                        .setName("user")
+                        .setDescription("User to remove from the watchlist.")
                         .setRequired(true)
+                )
+                .addStringOption((opt) =>
+                    opt
+                        .setName("reason")
+                        .setDescription("Reason for removing the user.")
+                )
+        )
+        .addSubcommand((sub) =>
+            sub
+                .setName("ban-from-general")
+                .setDescription("Ban a user from general channels.")
+                .addUserOption((opt) =>
+                    opt
+                        .setName("user")
+                        .setDescription("User to ban from general.")
+                        .setRequired(true)
+                )
+                .addStringOption((opt) =>
+                    opt.setName("reason").setDescription("Reason for the ban.")
+                )
+        )
+        .addSubcommand((sub) =>
+            sub
+                .setName("unban-from-general")
+                .setDescription("Unban a user from general channels.")
+                .addUserOption((opt) =>
+                    opt
+                        .setName("user")
+                        .setDescription("User to unban from general.")
+                        .setRequired(true)
+                )
+                .addStringOption((opt) =>
+                    opt
+                        .setName("reason")
+                        .setDescription("Reason for the unban.")
                 )
         ),
 
@@ -71,182 +129,284 @@ module.exports = {
     guildId: GUILD_ID,
 
     async execute(interaction) {
-        await interaction.deferReply({ ephemeral: true });
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+        if (
+            !interaction.member.permissions.has(
+                PermissionFlagsBits.Administrator
+            ) &&
+            !interaction.member.roles.cache.has(MOD_ROLE_ID)
+        ) {
+            return interaction.editReply({
+                content: "You do not have permission to use this command.",
+            });
+        }
+
+        const subcommand = interaction.options.getSubcommand();
+        const reason = interaction.options.getString("reason");
+        const targetUser = interaction.options.getUser("user");
+
         try {
-            // Allow only administrators or users with the moderator role
-            const MOD_ROLE_ID = '857990235194261514';
-            const member = interaction.member;
-            if (!member.permissions.has(PermissionFlagsBits.Administrator) && !member.roles.cache.has(MOD_ROLE_ID)) {
-                await interaction.editReply({
-                    content: 'You do not have permission to use this command.',
-                    flags: MessageFlags.Ephemeral
-                });
-                return;
-            }
-
-            const subcommand = interaction.options.getSubcommand();
-            const guild = interaction.guild;
-            const role = await guild.roles.fetch(TARGET_ROLE_ID);
-            if (!role) {
-                await interaction.editReply({
-                    content: `Role <@&${TARGET_ROLE_ID}> not found!`,
-                    flags: MessageFlags.Ephemeral
-                });
-                return;
-            }
-
-            if (subcommand === 'mute') {
-                const global = interaction.options.getBoolean('global') || false;
-                const durationKey = interaction.options.getString('duration');
-                const durationMs = DURATION_OPTIONS[durationKey];
-                if (!durationMs) {
-                    await interaction.editReply({
-                        content: 'Invalid duration selected.',
-                        flags: MessageFlags.Ephemeral
+            if (subcommand === "add" || subcommand === "remove") {
+                const member = await interaction.guild.members.fetch(
+                    targetUser.id
+                );
+                if (!member)
+                    return interaction.editReply({
+                        content: "User not found in this server.",
                     });
-                    return;
-                }
-                if (global) {
-                    // Mute or unmute only channels under the target categories, except excluded
-                    let mutedChannels = [];
-                    let unmutedChannels = [];
-                    for (const [id, channel] of guild.channels.cache) {
-                        if (EXCLUDED_CHANNELS.includes(id)) continue;
-                        if (!channel.isTextBased?.() || !channel.viewable) continue;
-                        if (!channel.parentId || !TARGET_CATEGORIES.includes(channel.parentId)) continue;
-                        const overwrite = channel.permissionOverwrites.cache.get(TARGET_ROLE_ID);
-                        if (!overwrite || overwrite.allow.has(PermissionFlagsBits.SendMessages) || (!overwrite.deny.has(PermissionFlagsBits.SendMessages))) {
-                            // Not muted, so mute
-                            await channel.permissionOverwrites.edit(role, {
-                                SendMessages: false
-                            });
-                            mutedChannels.push(channel);
-                            // Set timeout to unmute
-                            if (muteTimeouts.has(channel.id)) clearTimeout(muteTimeouts.get(channel.id));
-                            muteTimeouts.set(channel.id, setTimeout(async () => {
-                                try {
-                                    await channel.permissionOverwrites.edit(role, { SendMessages: null });
-                                } catch (e) { console.error('Failed to auto-unmute:', e); }
-                                muteTimeouts.delete(channel.id);
-                            }, durationMs));
-                        } else {
-                            // Already muted, so unmute (reset to default)
-                            await channel.permissionOverwrites.edit(role, {
-                                SendMessages: null
-                            });
-                            unmutedChannels.push(channel);
-                            if (muteTimeouts.has(channel.id)) {
-                                clearTimeout(muteTimeouts.get(channel.id));
-                                muteTimeouts.delete(channel.id);
-                            }
-                        }
-                    }
-                    let msg = '';
-                    if (mutedChannels.length > 0) msg += `Muted <@&${TARGET_ROLE_ID}> in ${mutedChannels.length} channels for ${durationKey}.\n`;
-                    if (unmutedChannels.length > 0) msg += `Unmuted <@&${TARGET_ROLE_ID}> in ${unmutedChannels.length} channels.\n`;
-                    if (!msg) msg = 'No channels were changed.';
+                const role = await interaction.guild.roles.fetch(
+                    WATCHLIST_ROLE_ID
+                );
+                if (!role)
+                    return interaction.editReply({
+                        content: `Watchlist Role not found!`,
+                    });
+
+                if (subcommand === "add") {
+                    if (member.roles.cache.has(role.id))
+                        return interaction.editReply({
+                            content: `${targetUser} already has the role.`,
+                        });
+                    await member.roles.add(role);
                     await interaction.editReply({
-                        content: msg,
-                        flags: MessageFlags.Ephemeral
+                        content: `Added ${role} to ${targetUser}.`,
+                    });
+                    await sendLogMessage(
+                        interaction,
+                        `**${interaction.user.username}** added ${role} to ${targetUser}`,
+                        reason
+                    );
+                } else {
+                    // remove
+                    if (!member.roles.cache.has(role.id))
+                        return interaction.editReply({
+                            content: `${targetUser} does not have the role.`,
+                        });
+                    await member.roles.remove(role);
+                    await interaction.editReply({
+                        content: `Removed ${role} from ${targetUser}.`,
+                    });
+                    await sendLogMessage(
+                        interaction,
+                        `**${interaction.user.username}** removed ${role} from ${targetUser}`,
+                        reason
+                    );
+                }
+            } else if (subcommand === "ban-from-general") {
+                const member = await interaction.guild.members.fetch(
+                    targetUser.id
+                );
+                if (!member)
+                    return interaction.editReply({
+                        content: "User not found in this server.",
+                    });
+                const role = await interaction.guild.roles.fetch(
+                    BANNED_FROM_GENERAL_ROLE_ID
+                );
+                if (!role)
+                    return interaction.editReply({
+                        content: `Ban from General role not found!`,
+                    });
+
+                if (member.roles.cache.has(role.id)) {
+                    // Button logic removed - now it just sends a message
+                    return interaction.editReply({
+                        content: `${targetUser} already has the ban role. Use </watchlist unban-from-general:1396454760835711046> to remove it.`,
                     });
                 } else {
-                    // Mute or unmute in the current channel
-                    const channel = interaction.channel;
-                    const overwrite = channel.permissionOverwrites.cache.get(TARGET_ROLE_ID);
-                    if (!overwrite || overwrite.allow.has(PermissionFlagsBits.SendMessages) || (!overwrite.deny.has(PermissionFlagsBits.SendMessages))) {
-                        // Not muted, so mute
-                        await channel.permissionOverwrites.edit(role, {
-                            SendMessages: false
-                        });
-                        // Set timeout to unmute
-                        if (muteTimeouts.has(channel.id)) clearTimeout(muteTimeouts.get(channel.id));
-                        muteTimeouts.set(channel.id, setTimeout(async () => {
-                            try {
-                                await channel.permissionOverwrites.edit(role, { SendMessages: null });
-                            } catch (e) { console.error('Failed to auto-unmute:', e); }
-                            muteTimeouts.delete(channel.id);
-                        }, durationMs));
-                        await interaction.editReply({
-                            content: `<@&${TARGET_ROLE_ID}> has been muted (cannot send messages) in <#${channel.id}> for ${durationKey}`,
-                            flags: MessageFlags.Ephemeral
-                        });
-                    } else {
-                        // Already muted, so unmute (reset to default)
-                        await channel.permissionOverwrites.edit(role, {
-                            SendMessages: null
-                        });
-                        if (muteTimeouts.has(channel.id)) {
-                            clearTimeout(muteTimeouts.get(channel.id));
-                            muteTimeouts.delete(channel.id);
-                        }
-                        await interaction.editReply({
-                            content: `<@&${TARGET_ROLE_ID}> has been unmuted (send messages permission reset to default) in <#${channel.id}>`,
-                            flags: MessageFlags.Ephemeral
-                        });
-                    }
-                }
-            } else if (subcommand === 'add') {
-                // Add the role to a user
-                const user = interaction.options.getUser('user');
-                const guildMember = await guild.members.fetch(user.id);
-                if (!guildMember) {
+                    await member.roles.add(role);
                     await interaction.editReply({
-                        content: `User not found in this server!`,
-                        flags: MessageFlags.Ephemeral
+                        content: `Added ${role} to ${targetUser}.`,
                     });
-                    return;
+                    await sendLogMessage(
+                        interaction,
+                        `**${interaction.user.username}** added ${role} to ${targetUser}`,
+                        reason
+                    );
                 }
-                if (guildMember.roles.cache.has(TARGET_ROLE_ID)) {
-                    await interaction.editReply({
-                        content: `${user} already has the watchlist role.`,
-                        flags: MessageFlags.Ephemeral
+            } else if (subcommand === "unban-from-general") {
+                const member = await interaction.guild.members.fetch(
+                    targetUser.id
+                );
+                if (!member)
+                    return interaction.editReply({
+                        content: "User not found in this server.",
                     });
-                    return;
+                const role = await interaction.guild.roles.fetch(
+                    BANNED_FROM_GENERAL_ROLE_ID
+                );
+                if (!role)
+                    return interaction.editReply({
+                        content: `Ban from General role not found!`,
+                    });
+
+                if (!member.roles.cache.has(role.id)) {
+                    return interaction.editReply({
+                        content: `${targetUser} does not have the ban role.`,
+                    });
                 }
-                await guildMember.roles.add(role);
+
+                await member.roles.remove(role);
                 await interaction.editReply({
-                    content: `Added <@&${TARGET_ROLE_ID}> to ${user}.`,
-                    flags: MessageFlags.Ephemeral
+                    content: `Removed ${role} from ${targetUser}.`,
                 });
-            } else if (subcommand === 'remove') {
-                // Remove the role from a user
-                const user = interaction.options.getUser('user');
-                const guildMember = await guild.members.fetch(user.id);
-                if (!guildMember) {
-                    await interaction.editReply({
-                        content: `User not found in this server!`,
-                        flags: MessageFlags.Ephemeral
+                await sendLogMessage(
+                    interaction,
+                    `**${interaction.user.username}** unbanned ${targetUser} from general chats`,
+                    reason
+                );
+            } else if (subcommand === "mute") {
+                const global =
+                    interaction.options.getBoolean("global") || false;
+                const durationKey = interaction.options.getString("duration");
+                const durationMs = DURATION_OPTIONS[durationKey];
+                const role = await interaction.guild.roles.fetch(
+                    WATCHLIST_ROLE_ID
+                );
+                if (!role)
+                    return interaction.editReply({
+                        content: `Watchlist role not found.`,
                     });
-                    return;
+
+                if (global) {
+                    await handleGlobalMute(
+                        interaction,
+                        role,
+                        durationKey,
+                        durationMs,
+                        reason
+                    );
+                } else {
+                    await handleChannelMute(
+                        interaction,
+                        role,
+                        durationKey,
+                        durationMs,
+                        reason
+                    );
                 }
-                if (!guildMember.roles.cache.has(TARGET_ROLE_ID)) {
-                    await interaction.editReply({
-                        content: `${user} does not have the watchlist role.`,
-                        flags: MessageFlags.Ephemeral
-                    });
-                    return;
-                }
-                await guildMember.roles.remove(role);
-                await interaction.editReply({
-                    content: `Removed <@&${TARGET_ROLE_ID}> from ${user}.`,
-                    flags: MessageFlags.Ephemeral
-                });
-            } else {
-                await interaction.editReply({
-                    content: 'Unknown subcommand.',
-                    flags: MessageFlags.Ephemeral
-                });
             }
         } catch (error) {
-            console.error('Error in watchlist command:', error);
-            try {
-                await interaction.editReply({
-                    content: `An error occurred: ${error.message}`,
-                    flags: MessageFlags.Ephemeral
-                });
-            } catch (err) {
-                console.error('Failed to send error reply:', err);
-            }
+            console.error("Error in watchlist command:", error);
+            await interaction.editReply({
+                content: `An error occurred: ${error.message}`,
+            });
         }
+    },
+};
+
+async function handleChannelMute(
+    interaction,
+    role,
+    durationKey,
+    durationMs,
+    reason
+) {
+    const channel = interaction.channel;
+    const overwrite = channel.permissionOverwrites.cache.get(role.id);
+    const isMuted =
+        overwrite && overwrite.deny.has(PermissionFlagsBits.SendMessages);
+
+    if (!isMuted) {
+        await channel.permissionOverwrites.edit(role, { SendMessages: false });
+        if (muteTimeouts.has(channel.id))
+            clearTimeout(muteTimeouts.get(channel.id));
+        muteTimeouts.set(
+            channel.id,
+            setTimeout(() => {
+                channel.permissionOverwrites
+                    .edit(role, { SendMessages: null })
+                    .catch((e) => console.error("Failed to auto-unmute:", e));
+                muteTimeouts.delete(channel.id);
+            }, durationMs)
+        );
+        await interaction.editReply({
+            content: `${role} has been muted in this channel for ${durationKey}.`,
+        });
+        await sendLogMessage(
+            interaction,
+            `**${interaction.user.username}** muted ${role} for ${durationKey} in ${channel}`,
+            reason
+        );
+    } else {
+        await channel.permissionOverwrites.edit(role, { SendMessages: null });
+        if (muteTimeouts.has(channel.id)) {
+            clearTimeout(muteTimeouts.get(channel.id));
+            muteTimeouts.delete(channel.id);
+        }
+        await interaction.editReply({
+            content: `${role} has been unmuted in this channel.`,
+        });
+        await sendLogMessage(
+            interaction,
+            `**${interaction.user.username}** unmuted ${role} in ${channel}`,
+            reason
+        );
     }
-}; 
+}
+
+async function handleGlobalMute(
+    interaction,
+    role,
+    durationKey,
+    durationMs,
+    reason
+) {
+    let mutedChannels = 0;
+    for (const [, channel] of interaction.guild.channels.cache) {
+        if (
+            EXCLUDED_CHANNELS.includes(channel.id) ||
+            !channel.isTextBased?.() ||
+            !channel.viewable ||
+            !channel.parentId ||
+            !TARGET_CATEGORIES.includes(channel.parentId)
+        ) {
+            continue;
+        }
+        await channel.permissionOverwrites.edit(role, { SendMessages: false });
+        mutedChannels++;
+        if (muteTimeouts.has(channel.id))
+            clearTimeout(muteTimeouts.get(channel.id));
+        muteTimeouts.set(
+            channel.id,
+            setTimeout(() => {
+                channel.permissionOverwrites
+                    .edit(role, { SendMessages: null })
+                    .catch((e) => console.error("Failed to auto-unmute:", e));
+                muteTimeouts.delete(channel.id);
+            }, durationMs)
+        );
+    }
+    const msg = `Muted ${role} in ${mutedChannels} channels for ${durationKey}.`;
+    await interaction.editReply({ content: msg });
+    await sendLogMessage(
+        interaction,
+        `**${interaction.user.username}** muted ${role} for ${durationKey} globally`,
+        reason
+    );
+}
+
+/**
+ * Sends a formatted log message to the designated log channel.
+ */
+async function sendLogMessage(interaction, action, reason) {
+    try {
+        const logChannel = await interaction.guild.channels.fetch(
+            LOG_CHANNEL_ID
+        );
+        if (!logChannel || !logChannel.isTextBased()) {
+            console.error(
+                `Log channel with ID ${LOG_CHANNEL_ID} not found or is not a text channel.`
+            );
+            return;
+        }
+        let logMessage = `${action}`;
+        if (reason) {
+            logMessage += `\n**Reason:** ${reason}`;
+        }
+        await logChannel.send(logMessage);
+    } catch (error) {
+        console.error("Failed to send log message:", error);
+    }
+}

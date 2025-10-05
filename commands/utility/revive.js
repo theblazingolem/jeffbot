@@ -14,6 +14,7 @@ const forbiddenPatterns = [
     "porn",
     "fuck",
     "bitch",
+    "hitler",
     /\b[gG](?:[oO0]{2,})[nN]\w*\b/, //goon
     /\bn[i1]g{2,}(?:a|er)?s?\b/i, //n word
     /f[a@]g{1,2}[o0]ts?/, // f word
