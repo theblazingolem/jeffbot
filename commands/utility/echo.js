@@ -1,7 +1,6 @@
 const { SlashCommandBuilder, MessageFlags } = require("discord.js");
 
-// The channel ID for logging echo command usage
-const LOG_CHANNEL_ID = "1350108952041492561"; // Replace with your actual log channel ID
+const LOG_CHANNEL_ID = "845885831708540940";
 
 const OVERRIDE_CODE = "7337#";
 
@@ -128,8 +127,8 @@ async function sendLogMessage(interaction, content, sentMessage) {
             `**${
                 interaction.user.username
             }** sent a message in ${interaction.channel.toString()}:`,
-            `>>> ${content}`,
-            `- Jump to message: ${sentMessage.url}`,
+            `> ${content}`,
+            `-# Jump to message: ${sentMessage.url}`,
         ].join("\n");
 
         await logChannel.send(logMessage);

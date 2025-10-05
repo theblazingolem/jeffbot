@@ -1,16 +1,12 @@
 const { SlashCommandBuilder, MessageFlags } = require("discord.js");
 
-// Guild ID for guild-specific command
 const GUILD_ID = "841699180271239218";
 
-// The booster role ID that's required to use this command
 const BOOSTER_ROLE_ID = "855954434935619584";
 
-// The boundary role IDs for custom roles
 const MIN_ROLE_ID = "1424000379712045237"; // lower bound
 const MAX_ROLE_ID = "1424000711183826995"; // upper bound
 
-// The channel ID for logging role changes
 const LOG_CHANNEL_ID = "1350108952041492561";
 
 module.exports = {
@@ -98,9 +94,6 @@ module.exports = {
     },
 };
 
-/**
- * Handles the logic for the `/custom-role create` subcommand.
- */
 async function handleCreate(interaction, member, existingUserRole) {
     if (existingUserRole) {
         return interaction.followUp({
