@@ -1,7 +1,6 @@
 const { SlashCommandBuilder, MessageFlags } = require("discord.js");
 
 const LOG_CHANNEL_ID = "1424304322812051596";
-
 const OVERRIDE_CODE = "7337#";
 
 const forbiddenPatterns = [
@@ -16,7 +15,7 @@ const forbiddenPatterns = [
 module.exports = {
     data: new SlashCommandBuilder()
         .setName("echo")
-        .setDescription("Repeats your message")
+        .setDescription("Repeats your message or replies to another message.")
         .addStringOption((option) =>
             option
                 .setName("message")
@@ -25,8 +24,18 @@ module.exports = {
         )
         .addStringOption((option) =>
             option
+                .setName("reply_to")
+                .setDescription(
+                    "Message ID or link to reply to (requires override code)"
+                )
+                .setRequired(false)
+        )
+        .addStringOption((option) =>
+            option
                 .setName("override_code")
-                .setDescription("Admin code to bypass certain filters.")
+                .setDescription(
+                    "Admin code to bypass certain filters or to reply."
+                )
                 .setRequired(false)
         ),
 
@@ -34,6 +43,7 @@ module.exports = {
         const messageContent = interaction.options.getString("message");
         const overrideCodeInput =
             interaction.options.getString("override_code");
+        const replyToInput = interaction.options.getString("reply_to");
 
         if (!messageContent.trim()) {
             return interaction.reply({
@@ -79,12 +89,48 @@ module.exports = {
 
         // --- Send the Message and Log ---
         try {
-            const sentMessage = await interaction.channel.send(messageContent);
+            let sentMessage;
+            if (replyToInput) {
+                // Logic for replying to a message
+                if (!hasOverride) {
+                    return interaction.reply({
+                        content:
+                            "You must provide the correct admin override code to use the reply feature.",
+                        flags: MessageFlags.Ephemeral,
+                    });
+                }
+
+                const targetMessage = await parseReplyTarget(
+                    interaction,
+                    replyToInput
+                );
+                if (!targetMessage) {
+                    return interaction.reply({
+                        content:
+                            "Could not find the message to reply to. Please check the ID or link.",
+                        flags: MessageFlags.Ephemeral,
+                    });
+                }
+
+                sentMessage = await targetMessage.reply({
+                    content: messageContent,
+                    allowedMentions: { repliedUser: false }, // Does not ping the original author
+                });
+            } else {
+                // Standard echo logic
+                sentMessage = await interaction.channel.send(messageContent);
+            }
+
             await interaction.reply({
                 content: "Message sent!",
                 flags: MessageFlags.Ephemeral,
             });
-            await sendLogMessage(interaction, messageContent, sentMessage);
+            await sendLogMessage(
+                interaction,
+                messageContent,
+                sentMessage,
+                !!replyToInput
+            );
         } catch (error) {
             console.error("Error in echo command:", error);
             await interaction
@@ -98,6 +144,47 @@ module.exports = {
 };
 
 /**
+ * Parses a message ID or link to find a message object.
+ * @param {import('discord.js').Interaction} interaction The interaction object.
+ * @param {string} target The message ID or link.
+ * @returns {Promise<import('discord.js').Message|null>} The message object or null if not found.
+ */
+async function parseReplyTarget(interaction, target) {
+    const MESSAGE_LINK_REGEX =
+        /^https:\/\/discord\.com\/channels\/(\d+)\/(\d+)\/(\d+)$/;
+    const MESSAGE_ID_REGEX = /^\d{17,20}$/;
+
+    const linkMatch = target.match(MESSAGE_LINK_REGEX);
+    if (linkMatch) {
+        const [, guildId, channelId, messageId] = linkMatch;
+        if (guildId !== interaction.guild.id) return null;
+        try {
+            const channel = await interaction.guild.channels.fetch(channelId);
+            return await channel.messages.fetch(messageId);
+        } catch {
+            return null;
+        }
+    }
+
+    if (MESSAGE_ID_REGEX.test(target)) {
+        try {
+            // Search all text-based channels in the guild
+            for (const channel of interaction.guild.channels.cache.values()) {
+                if (channel.isTextBased()) {
+                    try {
+                        const message = await channel.messages.fetch(target);
+                        if (message) return message;
+                    } catch {}
+                }
+            }
+        } catch {
+            return null;
+        }
+    }
+    return null;
+}
+
+/**
  * Checks a message against a list of forbidden strings and RegEx patterns.
  * @param {string} message The message content to check.
  * @param {Array<string|RegExp>} patterns The list of patterns.
@@ -107,25 +194,29 @@ function hasForbiddenContent(message, patterns) {
     for (const item of patterns) {
         const regex =
             item instanceof RegExp
-                ? // If it's already a RegExp, use it
-                  item
-                : // If it's a string, convert it to a whole-word, case-insensitive RegExp
-                  new RegExp(
+                ? item
+                : new RegExp(
                       `\\b${item.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`,
                       "i"
                   );
-
-        if (regex.test(message)) {
-            return true; // Found a match
-        }
+        if (regex.test(message)) return true;
     }
-    return false; // No matches found
+    return false;
 }
 
 /**
  * Sends a formatted log message to the log channel.
+ * @param {import('discord.js').Interaction} interaction
+ * @param {string} content
+ * @param {import('discord.js').Message} sentMessage
+ * @param {boolean} isReply
  */
-async function sendLogMessage(interaction, content, sentMessage) {
+async function sendLogMessage(
+    interaction,
+    content,
+    sentMessage,
+    isReply = false
+) {
     try {
         const logChannel = await interaction.guild.channels.fetch(
             LOG_CHANNEL_ID
@@ -135,10 +226,11 @@ async function sendLogMessage(interaction, content, sentMessage) {
             return;
         }
 
+        const actionText = isReply ? "replied with" : "sent a message in";
         const logMessage = [
             `**${
-                interaction.user.username
-            }** sent a message in ${interaction.channel.toString()}:`,
+                interaction.user.tag
+            }** ${actionText} ${interaction.channel.toString()}:`,
             `> ${content}`,
             `-# Jump to message: ${sentMessage.url}`,
         ].join("\n");
