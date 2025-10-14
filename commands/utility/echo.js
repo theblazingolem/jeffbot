@@ -3,6 +3,10 @@ const { SlashCommandBuilder, MessageFlags } = require("discord.js");
 const LOG_CHANNEL_ID = "1424304322812051596";
 const OVERRIDE_CODE = "7337#";
 
+// Regex for message links and IDs
+const MESSAGE_LINK_REGEX = /channels\/\d+\/(\d+)\/(\d+)/;
+const MESSAGE_ID_REGEX = /^\d{17,20}$/;
+
 const forbiddenPatterns = [
     "porn",
     "hitler",
@@ -15,7 +19,9 @@ const forbiddenPatterns = [
 module.exports = {
     data: new SlashCommandBuilder()
         .setName("echo")
-        .setDescription("Repeats your message or replies to another message.")
+        .setDescription(
+            "Repeats your message, with an option to reply to another message."
+        )
         .addStringOption((option) =>
             option
                 .setName("message")
@@ -25,34 +31,33 @@ module.exports = {
         .addStringOption((option) =>
             option
                 .setName("reply_to")
-                .setDescription(
-                    "Message ID or link to reply to (requires override code)"
-                )
+                .setDescription("Message ID or link to reply to")
                 .setRequired(false)
         )
         .addStringOption((option) =>
             option
                 .setName("override_code")
                 .setDescription(
-                    "Admin code to bypass certain filters or to reply."
+                    "Admin code to bypass certain filters or to enable replying."
                 )
                 .setRequired(false)
         ),
 
     async execute(interaction) {
+        // --- Defer the reply immediately to prevent "Unknown Interaction" error ---
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
         const messageContent = interaction.options.getString("message");
         const overrideCodeInput =
             interaction.options.getString("override_code");
         const replyToInput = interaction.options.getString("reply_to");
+        const hasOverride = overrideCodeInput === OVERRIDE_CODE;
 
         if (!messageContent.trim()) {
-            return interaction.reply({
+            return interaction.editReply({
                 content: "Cannot send an empty message!",
-                flags: MessageFlags.Ephemeral,
             });
         }
-
-        const hasOverride = overrideCodeInput === OVERRIDE_CODE;
 
         // --- Filtering Logic ---
         const alwaysForbiddenPatterns = [
@@ -63,26 +68,41 @@ module.exports = {
 
         for (const { pattern, name } of alwaysForbiddenPatterns) {
             if (pattern.test(messageContent)) {
-                return interaction.reply({
+                return interaction.editReply({
                     content: `Your message contains a forbidden ${name}, which is not allowed under any circumstances.`,
-                    flags: MessageFlags.Ephemeral,
                 });
             }
         }
 
         if (!hasOverride) {
-            // Check for user mentions
             if (/<@\d+>/.test(messageContent)) {
-                return interaction.reply({
+                return interaction.editReply({
                     content: `Your message contains a user mention, which is not allowed.`,
-                    flags: MessageFlags.Ephemeral,
                 });
             }
-            // Check for forbidden words/patterns
             if (hasForbiddenContent(messageContent, forbiddenPatterns)) {
-                return interaction.reply({
-                    content: `Your message contains a forbidden word or pattern, which is not allowed.`,
-                    flags: MessageFlags.Ephemeral,
+                return interaction.editReply({
+                    content: `Your message contains a forbidden word or pattern.`,
+                });
+            }
+        }
+
+        // --- Reply Logic ---
+        let targetMessage = null;
+        if (replyToInput) {
+            if (!hasOverride) {
+                return interaction.editReply({
+                    content: "You don't have permissions to use this option",
+                });
+            }
+            targetMessage = await findMessage(
+                interaction.channel,
+                replyToInput
+            );
+            if (!targetMessage) {
+                return interaction.editReply({
+                    content:
+                        "Could not find the message to reply to. Please check the ID or link.",
                 });
             }
         }
@@ -90,106 +110,42 @@ module.exports = {
         // --- Send the Message and Log ---
         try {
             let sentMessage;
-            if (replyToInput) {
-                // Logic for replying to a message
-                if (!hasOverride) {
-                    return interaction.reply({
-                        content:
-                            "You must provide the correct admin override code to use the reply feature.",
-                        flags: MessageFlags.Ephemeral,
-                    });
-                }
-
-                const targetMessage = await parseReplyTarget(
-                    interaction,
-                    replyToInput
-                );
-                if (!targetMessage) {
-                    return interaction.reply({
-                        content:
-                            "Could not find the message to reply to. Please check the ID or link.",
-                        flags: MessageFlags.Ephemeral,
-                    });
-                }
-
+            if (targetMessage) {
+                // Replying to a specific message
                 sentMessage = await targetMessage.reply({
                     content: messageContent,
-                    allowedMentions: { repliedUser: false }, // Does not ping the original author
+                    allowedMentions: { repliedUser: false }, // Don't ping the author of the message being replied to
                 });
             } else {
-                // Standard echo logic
-                sentMessage = await interaction.channel.send(messageContent);
+                // Sending a new message in the channel
+                sentMessage = await interaction.channel.send({
+                    content: messageContent,
+                });
             }
 
-            await interaction.reply({
+            await interaction.editReply({
                 content: "Message sent!",
-                flags: MessageFlags.Ephemeral,
             });
+
             await sendLogMessage(
                 interaction,
                 messageContent,
                 sentMessage,
-                !!replyToInput
+                targetMessage
             );
         } catch (error) {
             console.error("Error in echo command:", error);
             await interaction
-                .reply({
+                .editReply({
                     content: "There was an error while sending the message!",
-                    flags: MessageFlags.Ephemeral,
                 })
-                .catch(console.error);
+                .catch(console.error); // Fallback catch
         }
     },
 };
 
-/**
- * Parses a message ID or link to find a message object.
- * @param {import('discord.js').Interaction} interaction The interaction object.
- * @param {string} target The message ID or link.
- * @returns {Promise<import('discord.js').Message|null>} The message object or null if not found.
- */
-async function parseReplyTarget(interaction, target) {
-    const MESSAGE_LINK_REGEX =
-        /^https:\/\/discord\.com\/channels\/(\d+)\/(\d+)\/(\d+)$/;
-    const MESSAGE_ID_REGEX = /^\d{17,20}$/;
+// --- Helper Functions ---
 
-    const linkMatch = target.match(MESSAGE_LINK_REGEX);
-    if (linkMatch) {
-        const [, guildId, channelId, messageId] = linkMatch;
-        if (guildId !== interaction.guild.id) return null;
-        try {
-            const channel = await interaction.guild.channels.fetch(channelId);
-            return await channel.messages.fetch(messageId);
-        } catch {
-            return null;
-        }
-    }
-
-    if (MESSAGE_ID_REGEX.test(target)) {
-        try {
-            // Search all text-based channels in the guild
-            for (const channel of interaction.guild.channels.cache.values()) {
-                if (channel.isTextBased()) {
-                    try {
-                        const message = await channel.messages.fetch(target);
-                        if (message) return message;
-                    } catch {}
-                }
-            }
-        } catch {
-            return null;
-        }
-    }
-    return null;
-}
-
-/**
- * Checks a message against a list of forbidden strings and RegEx patterns.
- * @param {string} message The message content to check.
- * @param {Array<string|RegExp>} patterns The list of patterns.
- * @returns {boolean} True if forbidden content is found, false otherwise.
- */
 function hasForbiddenContent(message, patterns) {
     for (const item of patterns) {
         const regex =
@@ -204,35 +160,48 @@ function hasForbiddenContent(message, patterns) {
     return false;
 }
 
-/**
- * Sends a formatted log message to the log channel.
- * @param {import('discord.js').Interaction} interaction
- * @param {string} content
- * @param {import('discord.js').Message} sentMessage
- * @param {boolean} isReply
- */
+async function findMessage(channel, input) {
+    try {
+        const linkMatch = input.match(MESSAGE_LINK_REGEX);
+        const idMatch = input.match(MESSAGE_ID_REGEX);
+
+        let messageId;
+        if (linkMatch) {
+            messageId = linkMatch[2];
+        } else if (idMatch) {
+            messageId = idMatch[0];
+        } else {
+            return null; // Invalid format
+        }
+
+        return await channel.messages.fetch(messageId);
+    } catch {
+        return null; // Message not found or other error
+    }
+}
+
 async function sendLogMessage(
     interaction,
     content,
     sentMessage,
-    isReply = false
+    repliedMessage
 ) {
     try {
         const logChannel = await interaction.guild.channels.fetch(
             LOG_CHANNEL_ID
         );
-        if (!logChannel || !logChannel.isTextBased()) {
-            console.error(`Log channel with ID ${LOG_CHANNEL_ID} not found.`);
-            return;
-        }
+        if (!logChannel || !logChannel.isTextBased()) return;
 
-        const actionText = isReply ? "replied with" : "sent a message in";
+        const replyInfo = repliedMessage
+            ? `\n-# In reply to: ${repliedMessage.url}`
+            : "";
+
         const logMessage = [
             `**${
-                interaction.user.tag
-            }** ${actionText} ${interaction.channel.toString()}:`,
+                interaction.user.username
+            }** sent a message in ${interaction.channel.toString()}:`,
             `> ${content}`,
-            `-# Jump to message: ${sentMessage.url}`,
+            `-# Jump to sent message: ${sentMessage.url}${replyInfo}`,
         ].join("\n");
 
         await logChannel.send(logMessage);
