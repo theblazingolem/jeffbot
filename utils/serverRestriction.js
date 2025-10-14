@@ -4,7 +4,7 @@
  */
 
 const { MessageFlags, PermissionFlagsBits } = require("discord.js");
-require('dotenv').config();
+require("dotenv").config();
 const ownerId = process.env.OWNERID;
 // require('../config.json');
 
@@ -21,7 +21,7 @@ const ADMIN_EVERYWHERE_COMMANDS = ["reload"];
 const ADMIN_SPECIFIC_SERVER_COMMANDS = ["servers"];
 
 // Commands that can be used by everyone in the allowed server
-const USER_SPECIFIC_SERVER_COMMANDS = [];
+const USER_SPECIFIC_SERVER_COMMANDS = ["transcript"];
 
 /**
  * Checks if a command should be restricted based on the server, command name, and user permissions
