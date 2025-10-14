@@ -9,9 +9,10 @@ module.exports = {
         .setName("transcript")
         .setDescription(
             "Fetches the last 200 messages and saves them to a text file."
-        )
-        .setDefaultMemberPermissions(PermissionFlagsBits.Administrator) // Only admins can use this
-        .setDMPermission(false), // Cannot be used in DMs
+        ),
+    // .setDefaultMemberPermissions(PermissionFlagsBits.Administrator) // Only admins can use this
+    // .setDMPermission(false), // Cannot be used in DMs
+
     guildCommand: true,
     guildId: GUILD_ID,
     async execute(interaction) {
