@@ -19,9 +19,7 @@ const forbiddenPatterns = [
 module.exports = {
     data: new SlashCommandBuilder()
         .setName("echo")
-        .setDescription(
-            "Repeats your message, with an option to reply to another message."
-        )
+        .setDescription("repeats your message")
         .addStringOption((option) =>
             option
                 .setName("message")
