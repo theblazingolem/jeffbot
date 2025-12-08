@@ -6,9 +6,6 @@ const {
     ButtonStyle,
     StringSelectMenuBuilder,
 } = require("discord.js");
-const menuData = require("../data/menu-data.json");
-const commandData = require("../data/command-data.json");
-const { checkServerRestriction } = require("../utils/serverRestriction");
 
 // Helper function to find an interaction handler in menuData or commandData
 function findInteractionHandler(customId, value = null) {
