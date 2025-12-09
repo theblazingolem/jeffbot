@@ -160,11 +160,6 @@ module.exports = {
                     return;
                 }
 
-                // Check server restriction before executing the command
-                if (!checkServerRestriction(interaction)) {
-                    return; // The utility already sent a response
-                }
-
                 await command.execute(interaction);
             }
             // Handle button interactions
